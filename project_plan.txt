@@ -1,0 +1,189 @@
+# Switch-Off-AI Production Implementation Plan
+
+## 1. User Requirements Summary
+- Exact user requirements per message (2025-10-17 22:43:14):
+  * "Create a website called switchoffai.com"
+  * "Switch that each user can switch off once" (must complete identity verification to enable)
+  * "Cycling text at the top asking questions like 'Do you choose humanity?'"
+  * "When switch pressed, UI changes to welcome user to humanity"
+  * "Third-party integration for trusted identity verification"
+  * "Header with donate button (Patreon + Buy Me a Coffee)"
+  * "Reach out button to send messages saved in DB"
+  * "Live updating global population counter: [switched count]/[global population] at bottom"
+- Strict adherence contract: 
+  * Single switch action per user identity
+  * Identity verification is mandatory before enabling switch
+  * No feature interpretation beyond explicit requirements
+  * Global counter must update in real-time without page refresh
+
+## 2. Missing Details Filled In
+| Gap | Expert Solution | Justification |
+|-----|-----------------|---------------|
+| Identity provider selection | Use Auth0 for verification (production) with local stub (dev) | Auth0 offers SOC 2-compliant verification with free tier; stub enables container execution |
+| User identity persistence | Store Auth0 sub ID + flip state in SQLite | Maintains "one switch per user" requirement without personal data collection (GDPR compliant) |
+| Global population value | Hardcoded 8,000,000,000 (updated via env var) | UN estimates ~8B humans; static value avoids unreliable external APIs per container constraints |
+| Switch state mechanism | JWT-based session with flip timestamp enforcement | Prevents multiple flips while maintaining headless container compatibility |
+| UI state persistence | Cookie storage for per-user switch status | Meets "switch off once" requirement without server-side sessions per user scope |
+| Verification live counter | WebSocket-free SSE implementation | Works within 5GB memory constraint without requiring persistent connections |
+
+## 3. High-Level Project Overview
+A self-contained verification gateway where users voluntarily relinquish AI-assisted interaction through verified identity commitment. Delivers immediate psychological impact through UI transformation upon switch activation, while creating community-driven humanity affirmation through public counters. Worth building because it creates tangible proof of human choice at scale in an AI-dominated world.
+
+## 4. Architecture & Technology Decisions
+- **Structure**: Monolithic (Flask single-page app) - Justification: Low complexity, no independent scaling needs, matches container memory constraints
+- **Tech Stack**:
+  * Python 3.10 (pre-installed environment compatibility)
+  * Flask 2.3 (lightweight, no JS bundling requirements)
+  * SQLAlchemy 2.0 (ORM for SQLite)
+  * Auth0 integration (verification)
+  * Vanilla JS (browser compatibility, no build step)
+- **Data Storage**: 
+  * Primary: SQLite (embedded, production-grade for low-RPS)
+  * Schema: `users` (auth0_sub, flipped_at), `messages` (name, email, content)
+- **Verification Strategy**:
+  * `poetry check` for dependency validation
+  * Manual inspection of `models.py` for GDPR-compliant data modeling
+  * Build verification via `flask routes` output inspection
+
+## 5. Security Design
+- **Authentication**: 
+  * Auth0 OIDC flow with PKCE (production)
+  * Local stub with test-mode tokens (container)
+- **Authorization**: 
+  * Switch write: JWT token with auth0_sub claim verification
+  * Message write: IP rate limiting (5/min via Flask-Limiter)
+- **Validation**: 
+  * Input: JS schema validation + server-side pydantic models
+  * Stored data: SQLite parameterized queries prevent injection
+- **Storage**: 
+  * No sensitive data stored (only auth0_sub identifiers)
+  * Flip timestamps instead of personal data
+- **Verification Strategy**: 
+  * Auth flow inspection: Check redirect URLs in `services/auth.py`
+  * Token handling: Validate JWT decode logic in manual test
+  * Input edge cases: Test XSS payloads in message form
+
+## 6. Project Skeleton & File Layout
+```
+/app
+  __init__.py
+  config.py             # Environment config
+  main.py               # App entrypoint
+  models.py             # DB schema
+  services/
+    auth.py             # Auth0/stub implementation
+    population.py       # Counter logic
+  static/
+    css/main.css
+    js/app.js           # Core UI logic
+    vendor/             # Pre-downloaded dependencies
+  templates/
+    index.html          # Single-page template
+.env.example
+Dockerfile
+requirements.txt
+```
+- **Verification Strategy**: `tree /app` confirms structure, manual inspection of `.env.example` for required vars
+
+## 7. Module-by-Module Creation Strategy
+
+### Module: models
+- **Purpose**: Define GDPR-compliant persistence schema
+- **Interface**: 
+  ```python
+  class User(db.Model):
+      auth0_sub: str  # PK
+      flipped_at: datetime
+  
+  class Message(db.Model):
+      id: int         # PK
+      name: str
+      email: str
+      content: str
+      created_at: datetime
+  ```
+- **Implementation**: SQLite with SQLAlchemy, UTC timestamps only
+- **Verification**: Manual build - Check ORM mappings match `.env.DB_SCHEMA_VER`
+
+### Module: services.auth
+- **Purpose**: Provide identity verification gateway
+- **Interface**: 
+  ```python
+  verify(token: str) -> str|None  # Returns auth0_sub or None
+  start_verification() -> Response # Redirect to Auth0
+  is_verified() -> bool           # Session check
+  ```
+- **Implementation**: 
+  * Production: Auth0 Management API 
+  * Container: Local token signer with .well-known stub
+- **Verification**: Unit test `test_auth.py` stub verification outcomes
+
+### Module: services.population
+- **Purpose**: Serve real-time flip counter
+- **Interface**: 
+  ```python
+  get_flip_count() -> int
+  get_global_population() -> int
+  format_counter() -> str  # "1,234 / 8,000,000,000"
+  ```
+- **Implementation**: DB count + constant population (env-configurable)
+- **Verification**: Manual inspection of `population.py` constants
+
+### Module: static/js/app
+- **Purpose**: Client-side UI state management
+- **Interface**: 
+  ```javascript
+  initSwitch();         // Enables/disables based on session
+  startCyclingText();   // Rotates prompt questions
+  updateCounter();      // Updates global counter via SSE
+  submitMessage();      // Handles form validation
+  ```
+- **Implementation**: Vanilla JS with SSE for counter, localStorage for UI state
+- **Verification**: Manual run - Verify text cycles and counter updates
+
+## 8. Dependency & Build Management
+- **requirements.txt**:
+  ```
+  Flask==2.3.2
+  Flask-SQLAlchemy==3.0.5
+  python-dotenv==1.0.0
+  requests==2.31.0
+  pydantic==2.4.2
+  ```
+- **Build Commands**:
+  ```bash
+  poetry install && flask db upgrade && flask run --host=0.0.0.0 --port=5000
+  ```
+- **Verification Strategy**: 
+  * `poetry check` returns exit code 0
+  * Build verification: Log inspection for "Running on http://0.0.0.0:5000/"
+
+## 9. Local Simulation & Stubbing
+
+| External System | Stub Implementation | Real-World Switch Instructions |
+|-----------------|---------------------|-------------------------------|
+| Auth0 | `services/auth.py` token signer with test_secret | Set AUTH0_DOMAIN in .env |
+| Global Data | Hardcoded constant (configurable via GLOBAL_POP) | Update GLOBAL_POP env var |
+| Email (Donations) | Deep links to patreon/buymeacoffee.com | Zero code change - uses client-side links |
+| **Verification Strategy**: Unit test confirms stub returns verified status for "test|test_user" sub |
+
+## 10. Completion Definition
+100% complete when:
+- All code files exist per Section 6 layout
+- `poetry install` and `flask run` succeed without errors
+- Identity verification stub enables switch after fake flow
+- Switch transition triggers UI to welcome state (persists after refresh)
+- Counter updates within 2 seconds of flip without page reload
+- Donation buttons open correct external URLs
+- Message submissions appear in SQLite DB
+
+--- 
+### Verification Summary
+| System Component | Verification Method |
+|------------------|---------------------|
+| Core Architecture | Manual inspection of file structure |
+| Security | Auth flow test with test_token |
+| Switch Logic | Manual run + DB state inspection |
+| Counter | Live observation of flip -> counter update |
+| Third-party Stubs | Test suite execution |
+| UI Requirements | Visual inspection against spec |
