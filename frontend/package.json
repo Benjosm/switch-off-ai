@@ -1,0 +1,17 @@
+{
+  "name": "switch-off-ai-frontend",
+  "version": "0.1.0",
+  "description": "Frontend for the Switch Off AI application",
+  "main": "main.js",
+  "scripts": {
+    "start": "http-server .",
+    "dev": "http-server . -o",
+    "test": "jest",
+    "build": "cp -r index.html main.js styles.css ./dist/ || mkdir -p dist && cp index.html main.js styles.css dist/"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}
